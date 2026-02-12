@@ -1,0 +1,4 @@
+# Игнорировать все файлы в каталоге, кроме probation_notify.php
+*
+!.gitignore
+!probation_notify.php
