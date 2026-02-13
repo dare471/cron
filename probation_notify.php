@@ -336,6 +336,47 @@ function buildProbationMessage(array $user, int $employeeBitrixId): string
     return $text;
 }
 
+/**
+ * Формирует текст уведомления для самого сотрудника о приближающемся окончании испытательного срока.
+ */
+function buildEmployeeProbationMessage(array $user, int $employeeBitrixId): string
+{
+    $name = trim($user['NAME'] ?? '');
+    $surname = trim($user['LAST_NAME'] ?? '');
+    
+    $hiringDateRaw = '';
+    foreach (HIRING_DATE_FIELDS as $field) {
+        $v = $user[$field] ?? null;
+        if ($v !== null && $v !== '') {
+            $hiringDateRaw = $v;
+            break;
+        }
+    }
+
+    $probationEndStr = '—';
+    if ($hiringDateRaw !== '') {
+        try {
+            if (is_numeric($hiringDateRaw)) {
+                $hiringDate = (new \DateTime())->setTimestamp((int) $hiringDateRaw);
+            } else {
+                $hiringDate = new \DateTime($hiringDateRaw);
+            }
+            $probationEnd = getProbationEndDate($hiringDate);
+            $probationEndStr = $probationEnd->format('d.m.Y');
+        } catch (\Exception $e) {
+            // Оставляем '—'
+        }
+    }
+
+    $text = "👋 Здравствуйте" . ($name ? ", " . $name : "") . "!\n\n";
+    $text .= "[B]Ваш испытательный срок заканчивается через " . DAYS_LEFT . " дней[/B]\n\n";
+    $text .= "Дата окончания испытательного срока: " . $probationEndStr . "\n\n";
+    $text .= "Пожалуйста, подготовьтесь к завершению испытательного периода. Если у вас возникнут вопросы, обратитесь к вашему руководителю или в отдел кадров.\n\n";
+    $text .= "Желаем успехов в работе! 💼";
+    
+    return $text;
+}
+
 // --- Основная логика: сотрудники с окончанием испытательного срока через DAYS_LEFT дней ---
 $employees = getUsersWithProbationEndingInDays(DAYS_LEFT);
 
@@ -366,6 +407,7 @@ foreach ($employees as $user) {
 
     $text = buildProbationMessage($user, $employeeId);
 
+    // Отправка уведомлений HR-менеджерам/администраторам
     foreach (RECIPIENT_BITRIX_IDS as $recipientId) {
         $ok = sendBitrixNotify((int) $recipientId, $text);
         if ($ok) {
@@ -373,6 +415,15 @@ foreach ($employees as $user) {
         } else {
             fwrite(STDERR, "Не удалось отправить уведомление получателю " . $recipientId . " о сотруднике ID=" . $employeeId . "\n");
         }
+    }
+
+    // Отправка уведомления самому сотруднику
+    $employeeMessage = buildEmployeeProbationMessage($user, $employeeId);
+    $ok = sendBitrixNotify($employeeId, $employeeMessage);
+    if ($ok) {
+        echo "Уведомление отправлено сотруднику ID=" . $employeeId . " о приближающемся окончании испытательного срока\n";
+    } else {
+        fwrite(STDERR, "Не удалось отправить уведомление сотруднику ID=" . $employeeId . "\n");
     }
 }
 
